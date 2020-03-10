@@ -7,3 +7,5 @@ The goal of this project is to visualise the data related to the number of cases
 The visualisations are also included in this repository, including graphs and animations that was created from the graphs generated. 
 
 A review of the results can be found in my blog post on this project, https://stabilowl.data.blog/2020/02/13/coronavirus-crisis-2020-a-data-perspective/ 
+
+The code and details for a online dashboard can be found in the dashboard folder.
