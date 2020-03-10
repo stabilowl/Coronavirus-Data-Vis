@@ -8,4 +8,4 @@ The visualisations are also included in this repository, including graphs and an
 
 A review of the results can be found in my blog post on this project, https://stabilowl.data.blog/2020/02/13/coronavirus-crisis-2020-a-data-perspective/ 
 
-The code and details for a online dashboard can be found in the dashboard folder.
+The code and details for a online dashboard can be found in the dashboard folder. The dashboard can be found at https://stabilowl.shinyapps.io/COVID-19-dashboard/
