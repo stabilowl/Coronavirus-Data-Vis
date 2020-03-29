@@ -20,6 +20,8 @@
 
 library(shiny)
 library(rnaturalearth)
+library(rnaturalearthdata)
+library(rgeos) #This is required for shinyapp.io
 library(sf)
 library(ggplot2)
 library(stringr)
@@ -32,10 +34,10 @@ library(ggrepel)
 #Specify the URL for retrieving the data for confirmed cases, recovered cases and deaths
 
 url <- "https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/"
-file_header <- "time_series_19-covid-"
-confirmed_url <- paste(url, file_header, "Confirmed.csv", sep = '')
-deaths_url <- paste(url, file_header, "Deaths.csv", sep = '')
-recovered_url <- paste(url, file_header, "Recovered.csv", sep = '')
+file_header <- "time_series_covid19_"
+confirmed_url <- paste(url, file_header, "confirmed_global.csv", sep = '')
+deaths_url <- paste(url, file_header, "deaths_global.csv", sep = '')
+recovered_url <- paste(url, file_header, "recovered_global.csv", sep = '')
 
 
 #Load Data, set NA to 0 as NA means 0 cases was discovered in that country
@@ -47,8 +49,39 @@ df_recover[is.na(df_recover)] <- 0
 df_deaths <- read.csv(deaths_url)
 df_deaths[is.na(df_deaths)] <- 0
 
-#Create dataframe for the current number of cases 
+
+
+#Pad up recover dataframe rows since it JHS has stopped updating it
+#First, add rows to df_confirm and df_deaths in df_recover but not df_confirm 
+df_lone <- anti_join(df_recover[,c(1:2)], df_confirm[,c(1:2)])
+df_confirm <- bind_rows(df_confirm, df_lone)
+df_deaths <- bind_rows(df_deaths, df_lone)
+df_confirm[is.na(df_confirm)] <- 0
+df_deaths[is.na(df_deaths)] <- 0
+
+#Then, add rows that are missing in df_recover
+df_missing <- anti_join(df_confirm[,c(1:2)], df_recover[,c(1:2)])
+df_recover <- bind_rows(df_recover, df_missing)
+df_recover[is.na(df_recover)] <- 0
+
+#Sort all three dataframes
+df_confirm <- df_confirm[order(df_confirm$Country.Region),]
+df_deaths <- df_deaths[order(df_deaths$Country.Region),]
+df_recover <- df_recover[order(df_recover$Country.Region),]
+
+
+#Create dataframe for the current number of cases, considering df_recover would have less columns since JHS stopped updating
 df_current <- df_confirm
+
+for (i in 5:length(df_recover)){
+    df_current[,c(i)] <- df_confirm[,c(i)] - df_deaths[,c(i)] - df_recover[,c(i)] 
+}
+if (length(df_recover) < length(df_current)){
+  for (i in length(df_recover)+1:length(df_current)){
+    df_current[,c(i)] <- df_confirm[,c(i)] - df_deaths[,c(i)] - df_recover[,c(length(df_recover))] 
+  }
+}
+
 
 #current case = cconfirmed - deaths - recovered. Only the data rows are evaluated 
 for (i in 5:length(df_confirm)){
@@ -66,12 +99,13 @@ df_current_world <- aggregate(df_current[,c(5:(length(df_current)))], by=list(Ca
 #Create a df for the locations to obtain a latitude and longitude for each country for labelling. Median value taken if more than one Lat and Long
 df_locations <- aggregate(df_confirm[, c(3,4)], by=list(Category=df_confirm$Country.Region), FUN=median)
 
+
 #Rename country in the data to match that on WorldMap in rnaturalworld
-df_death_world$Category <- recode(df_death_world$Category, 'US' = 'United States' , 'UK' = 'United Kingdom', 'Mainland China' = 'China', 'South Korea' = 'Korea')
-df_recover_world$Category <- recode(df_recover_world$Category, 'US' = 'United States' , 'UK' = 'United Kingdom', 'Mainland China' = 'China', 'South Korea' = 'Korea')
-df_confirm_world$Category <- recode(df_confirm_world$Category, 'US' = 'United States' , 'UK' = 'United Kingdom', 'Mainland China' = 'China', 'South Korea' = 'Korea')
-df_current_world$Category <- recode(df_current_world$Category, 'US' = 'United States' , 'UK' = 'United Kingdom', 'Mainland China' = 'China', 'South Korea' = 'Korea')
-df_locations$Category <- recode(df_locations$Category, 'US' = 'United States' , 'UK' = 'United Kingdom', 'Mainland China' = 'China', 'South Korea' = 'Korea')
+df_death_world$Category <- recode(df_death_world$Category, 'US' = 'United States' , 'Korea, South' = 'Korea', "Taiwan*" = 'Taiwan', "Czechia" =  "Czech Rep.", "Congo (Kinshasa)" =  "Dem. Rep. Congo", "Dominican Republic" = "Dominican Rep.")
+df_recover_world$Category <- recode(df_recover_world$Category, 'US' = 'United States' , 'Korea, South' = 'Korea', "Taiwan*" = 'Taiwan', "Czechia" =  "Czech Rep.", "Congo (Kinshasa)" =  "Dem. Rep. Congo", "Dominican Republic" = "Dominican Rep.")
+df_confirm_world$Category <- recode(df_confirm_world$Category, 'US' = 'United States' , 'US' = 'United States' , 'Korea, South' = 'Korea', "Taiwan*" = 'Taiwan', "Czechia" =  "Czech Rep.", "Congo (Kinshasa)" =  "Dem. Rep. Congo", "Dominican Republic" = "Dominican Rep.")
+df_current_world$Category <- recode(df_current_world$Category, 'US' = 'United States' , 'Korea, South' = 'Korea', "Taiwan*" = 'Taiwan', "Czechia" =  "Czech Rep.", "Congo (Kinshasa)" =  "Dem. Rep. Congo", "Dominican Republic" = "Dominican Rep.")
+df_locations$Category <- recode(df_locations$Category, 'US' = 'United States' , 'Korea, South' = 'Korea', "Taiwan*" = 'Taiwan', "Czechia" =  "Czech Rep.", "Congo (Kinshasa)" =  "Dem. Rep. Congo", "Dominican Republic" = "Dominican Rep.")
 
 
 #Calculate the total confirmed, recovered, deaths and current in the world to be displayed on dashboard
@@ -118,7 +152,7 @@ ui <- dashboardPage(
     #Third row: Plotting of time series plot, and inputs for the time series. Time series for each country can be selected and viewed
     fluidRow(
       column(10, plotOutput(outputId = "TimeSeries")),
-      column(2, selectInput(inputId = "Countries", label = "Select A Country", choices = c("All", as.character(df_confirm_world$Category))))
+      column(2, selectInput(inputId = "Countries", label = "Select A Country/Region", choices = c("All", as.character(df_confirm_world$Category))))
     )
   )
 )
@@ -150,7 +184,7 @@ server <- function(input, output){
   
   output$Total_Deaths <- renderValueBox({valueBox(total_deaths, "Deaths")})
   
-  output$Total_Recovered <- renderValueBox({valueBox(total_recovered, "Recovered")})
+  output$Total_Recovered <- renderValueBox({valueBox(total_recovered, "Recovered (not updated since 27/3)")})
 
   output$Total_Current <- renderValueBox({valueBox(total_current, "Still in Care")})
 
@@ -161,14 +195,14 @@ server <- function(input, output){
     if (input$Cases == "Confirmed"){
       df_data <- df_confirm_world
       display_case <- "Confirmed Cases"
-      threshold_world <- 1000
-      threshold_region <- 50
+      threshold_world <- 5000
+      threshold_region <- 500
     }
     if (input$Cases == "Recovered"){
       df_data <- df_recover_world
       display_case <- "Recovered Cases"
       threshold_world <- 500
-      threshold_region <- 30
+      threshold_region <- 100
     }
     if (input$Cases == "Deaths"){
       df_data <- df_death_world
@@ -179,8 +213,8 @@ server <- function(input, output){
     if (input$Cases == "Current"){
       df_data <- df_current_world
       display_case <- "Current Cases"
-      threshold_world <- 500
-      threshold_region <- 30
+      threshold_world <- 5000
+      threshold_region <- 300
     }
     
 
@@ -284,7 +318,7 @@ server <- function(input, output){
         #Color in countries according to the number of cases. A Purple to Red Palette is used. 
         geom_sf(data = combined_data, aes(fill = data_bin)) + 
         scale_fill_brewer(palette = "PuRd", drop = FALSE) + 
-        #Add labels for countries above 50 cases within the displayed map, use geom_label_repel to make sure they do not overlap
+        #Add labels for countries above threshold cases within the displayed map, use geom_label_repel to make sure they do not overlap
         geom_label_repel(data= label_data[((label_data$Column_Plot) > threshold_region),],aes(x=Long, y=Lat, label= paste(name, Column_Plot, sep = ":"))) +
         #Aesthetics - make background transparent, bold title, remove legend title, make it transparent 
         theme(plot.background = element_blank(), plot.title = element_text(face = "bold"), legend.title = element_blank(), legend.background = element_blank()) + 
